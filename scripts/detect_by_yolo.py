@@ -5,7 +5,7 @@ import os
 # ===== 配置区 =====
 # 训练好之后把 best.pt 放到 models/ 文件夹
 # 没训练之前可以先用 yolo11n.pt 测试流程
-MODEL_PATH = "./models/best.pt"
+MODEL_PATH = "./models/train_v1/weights/best.pt"
 RESULTS_DIR = "./results"
 # ==================
 
