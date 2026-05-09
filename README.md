@@ -6,11 +6,11 @@
 
 > 面向停车安全的仰视果实检测：先用 YOLO 检测果实状态/类型，再评估车是否适合停在树下。
 
-后续不要继续把项目只当成"数果子"。旧的单类别模型可以保留作为基线模型，但主模型应改成多类别检测。
+后续不继续把项目只当成"数果子"。旧的单类别模型可以保留作为基线模型，但主模型应改成多类别检测。
 
 ## 推荐类别
 
-Roboflow 中建议使用这 4 个类别：
+Roboflow 中使用这 4 个类别：
 
 ```yaml
 nc: 4
@@ -33,7 +33,7 @@ fruit_cluster: 果实密集成簇，难以逐个框出时使用
 标注规则：
 
 1. 单个果实边界清楚时，尽量框单个果实。
-2. 多个果实重叠、边界难以区分时，整簇标为 `fruit_cluster`。
+2. 多个果实重叠、边界难以区分时，整簇标为 `fruit_cluster`。（未实现）
 3. 体积较小、绿色、明显未成熟的果实标为 `immature_fruit`。
 4. 大小和颜色都接近正常成熟状态的果实标为 `mature_fruit`。
 5. 发暗、破损、干枯、腐烂或明显过熟的果实标为 `overripe_fruit`。
@@ -53,7 +53,7 @@ data/fruit_risk/test/images
 data/fruit_risk/test/labels
 ```
 
-旧的单类别数据集如果继续保留，只建议作为基线对比使用。
+旧的单类别数据集如果继续保留，只作为基线对比使用。
 
 ## 安装依赖
 
@@ -119,11 +119,10 @@ fruit_cluster/dense_fruit_cluster: 4.0
 低风险：没有检测到果实，或主要是未成熟/低风险果实
 ```
 
-这里故意使用可解释的规则，方便写进论文或汇报。
 
 ## Qwen-VL 对比方法
 
-Qwen-VL 适合作为辅助分析或对比基线，不建议作为唯一方法。
+Qwen-VL 适合作为辅助分析或对比基线，不作为唯一方法。
 
 使用前先设置 API Key：
 
@@ -132,7 +131,6 @@ export DASHSCOPE_API_KEY='your_key_here'
 python scripts/detect_by_qwen.py data/raw/01.png
 ```
 
-如果 API Key 曾经写进代码、截图或发给别人，请去控制台撤销旧 Key，并重新生成。
 
 ## 推荐实验设计
 
@@ -141,7 +139,7 @@ python scripts/detect_by_qwen.py data/raw/01.png
 3. 风险评估实验：YOLO 检测结果 + 规则化风险评分。
 4. 可选对比实验：Qwen-VL 视觉分析。
 
-YOLO 指标建议汇报：
+YOLO 指标：
 
 ```text
 Precision

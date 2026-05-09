@@ -3,9 +3,9 @@ import base64
 import sys
 import os
 
-# ===== 配置区 =====
+# 配置区
 API_KEY = "sk-3355e649806f4e74a6ab393b01ab494c"
-# ==================
+
 
 def detect_fruit(image_path):
     if not os.path.exists(image_path):
@@ -25,7 +25,7 @@ def detect_fruit(image_path):
     )
 
     response = client.chat.completions.create(
-        model="qwen-vl-plus",  # 阿里最强视觉模型，免费额度内可用
+        model="qwen-vl-plus",  
         messages=[{
             "role": "user",
             "content": [
@@ -65,6 +65,6 @@ def detect_fruit(image_path):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("使用方式：python detect_by_claude.py ./data/raw/tree.jpg")
+        print("使用方式：python detect_by_qwen.py ./data/raw/tree.jpg")
     else:
         detect_fruit(sys.argv[1])
