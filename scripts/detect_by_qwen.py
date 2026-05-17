@@ -4,7 +4,7 @@ import sys
 import os
 
 # 配置区
-API_KEY = "sk-3355e649806f4e74a6ab393b01ab494c"
+API_KEY = os.environ.get("DASHSCOPE_API_KEY", "")
 
 
 def detect_fruit(image_path):

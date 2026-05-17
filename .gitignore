@@ -1,3 +1,58 @@
-models/
-data/
+# ===========================================================
+# 策略：保留训练产物里的小型可视化和指标文件（results.png、
+#       confusion_matrix.png、labels.jpg、results.csv、曲线图、
+#       args.yaml、val_batch_pred.jpg 等），屏蔽大文件（权重、
+#       数据集原图、训练 batch 预览）。
+# ===========================================================
+
+# ---- 模型权重（大）----
+**/weights/
+*.pt
+*.pth
+*.onnx
+*.engine
+*.torchscript
+*.tflite
+
+# ---- 训练 batch 预览图（每张约 800KB，价值不高）----
+**/train_batch*.jpg
+**/train_batch*.png
+
+# ---- 数据集原图与标签（量大）----
+data/*/train/
+data/*/valid/
+data/*/test/
+data/raw/
+# 保留 data/*/data.yaml 与 data/*/README*.txt（这两类不在上面被排除）
+
+# ---- 推理输出（容易很大，需要时再单独保存到 results/）----
+runs/
+
+# ---- results/ 默认屏蔽（推理结果），如有想保留的小图请用 ! 例外 ----
 results/
+
+# ---- 密钥与环境变量 ----
+.env
+.env.*
+!.env.example
+secrets.json
+*.key
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+
+# ---- 日志 ----
+*.log
+nohup.out
+
+# ---- IDE / 系统 ----
+.idea/
+.DS_Store
+Thumbs.db

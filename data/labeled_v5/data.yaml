@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 3
+names: ['immature_fruit', 'mature_fruit', 'overripe_fruit']
+
+roboflow:
+  workspace: ruis-workspace-0jrts
+  project: fruit-detect-283hy
+  version: 5
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/ruis-workspace-0jrts/fruit-detect-283hy/dataset/5
