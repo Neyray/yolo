@@ -5,7 +5,7 @@ import os
 # ===== 配置区 =====
 # 训练好之后把 best.pt 放到 models/ 文件夹
 # 没训练之前可以先用 yolo11n.pt 测试流程
-MODEL_PATH = "./models/train_v4/weights/best.pt"
+MODEL_PATH = "./models/train_v5/weights/best.pt"
 #脚本里 RESULTS_DIR = "./results" 但YOLO内部会自动加一层路径，导致实际保存到了 runs/detect/results/predict
 RESULTS_DIR = "/home/jerico/projects/fruit_detect/results"
 # ==================
