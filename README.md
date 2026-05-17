@@ -10,15 +10,14 @@
 
 ## 推荐类别
 
-Roboflow 中使用这 4 个类别：
+Roboflow 中使用这 3 个类别：
 
 ```yaml
-nc: 4
+nc: 3
 names:
   - immature_fruit
   - mature_fruit
   - overripe_fruit
-  - fruit_cluster
 ```
 
 类别含义：
@@ -27,13 +26,12 @@ names:
 immature_fruit: 未成熟果实
 mature_fruit: 成熟果实
 overripe_fruit: 过熟、破损、干枯或明显高风险果实
-fruit_cluster: 果实密集成簇，难以逐个框出时使用
 ```
 
 标注规则：
 
-1. 单个果实边界清楚时，尽量框单个果实。
-2. 多个果实重叠、边界难以区分时，整簇标为 `fruit_cluster`。（未实现）
+1. 每个可见的独立果实都框一个 bbox，避免漏标。
+2. 多个果实重叠时，按"主体可见"原则分别框出。
 3. 体积较小、绿色、明显未成熟的果实标为 `immature_fruit`。
 4. 大小和颜色都接近正常成熟状态的果实标为 `mature_fruit`。
 5. 发暗、破损、干枯、腐烂或明显过熟的果实标为 `overripe_fruit`。
@@ -68,20 +66,20 @@ pip install -r requirements.txt
 
 ```bash
 cd /home/jerico/projects/fruit_detect
-python scripts/train.py
+python scripts/train_v5.py
 ```
 
 常用参数：
 
 ```bash
-python scripts/train.py --weights yolo11s.pt --epochs 150 --batch 8 --name fruit_risk_yolo11s
+python scripts/train.py --weights yolo11s.pt --epochs 200 --batch 16 --name fruit_risk_yolo11s
 python scripts/train.py --data /path/to/data.yaml --device cpu
 ```
 
 默认输出模型位置：
 
 ```text
-models/fruit_risk_yolo11n/weights/best.pt
+models/train_v5/weights/best.pt
 ```
 
 ## 检测并判断停车风险
@@ -108,15 +106,14 @@ YOLO 检测脚本现在分两步：
 immature_fruit: 1.0
 mature_fruit: 2.0
 overripe_fruit: 5.0
-fruit_cluster/dense_fruit_cluster: 4.0
 ```
 
 停车建议规则：
 
 ```text
-高风险：高风险果实 >= 2，或果簇 >= 2，或 risk_score >= 12
-中风险：高风险果实 >= 1，或果簇 >= 1，或成熟果实 >= 3，或 risk_score >= 6
-低风险：没有检测到果实，或主要是未成熟/低风险果实
+高风险：overripe >= 2，或 risk_score >= 12
+中风险：overripe >= 1，或 mature >= 3，或 risk_score >= 6
+低风险：没有检测到果实，或主要是未成熟果实
 ```
 
 
