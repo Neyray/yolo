@@ -183,6 +183,58 @@
 - background → 误判为 immature_fruit：0.30
 - background → 误判为 overripe_fruit：0.08
 
+### 3.6 v5 输出图详细分析
+
+补一份 `models/train_v5/` 下所有评估图的解读，单图都不能独立下结论，要放在一起看。
+
+#### 3.6.1 四条曲线：F1 / P / R / PR
+
+`BoxF1_curve.png` 显示，所有类别在 conf=0.251 附近 F1 达到峰值 0.42。这意味着推理阶段 conf 设到 0.25 左右最稳，和 YOLO 默认值接近。F1 峰值只有 0.42 也直接反映模型整体还偏弱——三类里 mature_fruit 相对最稳，immature 和 overripe 都偏低。
+
+`BoxP_curve.png` 的趋势正常：低 conf 时框多但准度差，高 conf 时只剩极少高把握的框，所以右上角 Precision 接近 1.0。但 conf=0.787 时 Precision=1.0 这个点没有实际意义，因为此时 Recall 已经很低，大量果子被漏掉。对当前任务来说，把 conf 推到 0.5 以上没有好处。
+
+`BoxR_curve.png` 显示 conf→0 时 Recall 峰值约 0.70，conf 增大后快速下降，0.6 以后基本归零。也就是说很多预测框的置信度本来就不高，推理时把阈值设太严会丢掉一大批真实目标。如果偏向少漏检，可以试 conf=0.15；偏向少误检，可以试 conf=0.35。
+
+`BoxPR_curve.png` 是最核心的一张，曲线整体偏低，右上角不饱满，说明模型综合能力一般。三类 AP@0.5：immature 0.315 / mature 0.394 / overripe 0.385，total 0.365。值得注意的是 overripe 在数据量最少的情况下 AP 反而比 immature 略高，这间接说明 immature 的漏检比 overripe 更严重。
+
+#### 3.6.2 混淆矩阵：漏检远比误检严重
+
+`confusion_matrix.png` 的原始计数（对角线代表预测正确数）：
+
+| 类别 | 正确 | 漏检（被判为 background） | 误检 mature | 误检 immature |
+|---|---:|---:|---:|---:|
+| immature_fruit | 73 | 171 | 36 | — |
+| mature_fruit | 153 | 132 | — | 12 |
+| overripe_fruit | 14 | 10 | — | — |
+
+immature 的漏检数（171）已经远超正确预测数（73），是当前最大的单点问题。背景被误判为果子的情况里 mature 占大头（106 次），说明模型把树叶、光斑、阴影里圆形结构当成熟果的频率最高。
+
+`confusion_matrix_normalized.png` 是同样的信息按比例呈现：immature 正确率 0.26，mature 0.50，overripe 0.33。对应到背景漏检列，immature 真实目标被直接漏掉的比例高达 0.60，这是 Recall 偏低的主要来源。immature ↔ mature 之间还有非对称错判——immature 被判为 mature 0.13，反向只有 0.04，说明模型在颜色过渡区间更倾向于"判熟"。
+
+#### 3.6.3 labels.jpg：标注分布暴露两个结构性问题
+
+实例数分布是 3943 / 1559 / 382（mature / immature / overripe），mature 是 overripe 的 10 倍多，模型自然会偏向 mature。这是为什么 overripe 在 v5 已经从 0.083 涨到 0.385，但还有继续上涨空间——只要 overripe 实例继续补到接近 immature 的量级，它的 AP 还会再走高。
+
+右下角的 bbox 宽高分布同样关键：训练集大多数框都集中在 normalized width/height 小于 0.1 的区间，也就是说目标普遍很小。即便 v5 已经把 imgsz 提到 960，小目标对 YOLO 仍然是个慢性病。这也解释了一个反直觉现象——v4→v5 大量补图后 immature 的 Recall 反而没怎么涨，是因为新补的图里可能引入了更多小且模糊的 immature 目标，整体抬高了任务难度。
+
+#### 3.6.4 results.png：训练学到了东西，但泛化在退步
+
+训练集三条 loss（box / cls / dfl）从开始到结束都在平滑下降，说明模型确实在学。但验证集 box_loss 在第 30 轮左右触底 2.4 后微升到 2.5，dfl_loss 同样有轻微反弹。Precision 后期波动，Recall 没有进一步抬升，mAP50 在 25–40 轮之间达到峰值后基本平稳。
+
+整体走势不是"没学会"，而是"前 33 轮学到了主要的东西，之后开始走泛化下坡"。第 33 轮 best、第 63 轮早停的触发是合理的——继续训只会让训练集 loss 接着降而验证集变差。
+
+#### 3.6.5 val_batch 可视化：直观问题确认
+
+`val_batch0/1_labels.jpg` 是人工标注的 ground truth，能看出几个隐性问题：树冠和远处区域框非常密集，部分图里小框堆叠严重，类别在颜色过渡区域（半红半绿）确实存在主观性。
+
+`val_batch0/1_pred.jpg` 是 best.pt 在同一组图上的预测，置信度普遍集中在 0.3–0.6，模型不算很自信。密集树叶区域可以观察到典型的小目标误检——把叶簇当成果子，且会有同一果子被多次重叠预测。部分原本是 mature 的果子被预测成 immature，少量 overripe 被预测成 mature 或 immature，这和混淆矩阵反映的非对角错判是一致的。
+
+#### 3.6.6 综合结论与下一轮方向
+
+v5 这一轮的核心收益是 overripe 类从"模型放弃"恢复到了"和其他类同水平"，整体 mAP50 翻了 1.5 倍。剩余问题集中在四点：immature 漏检最严重（171 个，超过正确数 73）；mature 误检最严重（背景被判 mature 106 次）；类间存在不对称混淆，颜色过渡区域偏向判熟；小目标整体偏多，YOLO 不友好。
+
+下一轮（v6）的改动重点应该放在数据侧：继续把 overripe 补到 600+ 实例，使三类比例从当前的 10 : 4 : 1 缩到更平衡的量级；统一颜色过渡区间的标注口径，模糊或不可分辨的小目标不强行画框，避免拉高任务难度；视觉上明显腐烂、黑斑、干瘪、破损的优先标 overripe，而不是用普通红果硬凑数。训练侧次优先尝试 dropout=0.1、weight_decay=0.001、label_smoothing=0.1 抑制过拟合和类不平衡的影响；模型规模目前是 yolo11s，等数据进一步扩到 700+ 张再考虑 yolo11m，否则会更严重过拟合。
+
 ---
 
 ## 4. 三版本对比

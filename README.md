@@ -129,23 +129,83 @@ python scripts/detect_by_qwen.py data/raw/01.png
 ```
 
 
+## 评估指标说明
+
+YOLO 训练完成后会在 `models/train_vX/` 目录下输出四张曲线图和一份混淆矩阵，对应的核心指标含义如下。所有指标都在验证集（valid set）上计算。
+
+### Precision（精确率）
+
+```text
+Precision = TP / (TP + FP)
+```
+
+含义：模型预测出的框里，有多少是真目标。
+- TP（True Positive）：预测正确的框，与某个真实标注框 IoU ≥ 0.5 且类别一致。
+- FP（False Positive）：预测错误的框，比如把树叶、阴影、树枝判成果子，或者把果子类别认错。
+
+Precision 偏低，意味着误检多——模型"敢说"但说错的频率高。一般通过提高推理阈值 `conf` 来抬 Precision，但会以牺牲 Recall 为代价。
+
+### Recall（召回率）
+
+```text
+Recall = TP / (TP + FN)
+```
+
+含义：真实存在的目标里，模型找到了多少。
+- FN（False Negative）：漏检，真实有果子但模型没框出来。
+
+Recall 偏低，意味着漏检严重——很多果子根本没被发现。常见原因有目标太小、被遮挡、类别样本不均衡、标注质量差等。对"树上果子检测"这种任务，Recall 通常比 Precision 更重要。
+
+### F1
+
+```text
+F1 = 2 × Precision × Recall / (Precision + Recall)
+```
+
+含义：Precision 和 Recall 的调和平均，两者只要有一边低，F1 就低。`BoxF1_curve.png` 会画出 F1 随 conf 阈值的变化，曲线峰值对应的 conf 通常是推理时的最佳阈值。
+
+### mAP@0.5（IoU=0.5 下的平均精度）
+
+mAP 是 mean Average Precision 的缩写，先对每个类别在不同 Recall 下计算精度，得到 PR 曲线下面积 AP，再对所有类别求平均。
+
+`@0.5` 表示判定 TP 的 IoU 阈值是 0.5——只要预测框和真实框重叠面积占总面积的一半以上，就算位置基本正确。这是目标检测最常用的综合指标，对位置偏差容忍度较高。
+
+### mAP@0.5:0.95（COCO 风格主指标）
+
+把 IoU 阈值从 0.5 到 0.95 每隔 0.05 各算一次 mAP，再取平均，一共 10 个阈值。
+
+比 mAP@0.5 严格得多，因为高 IoU 阈值要求框得很准。mAP@0.5:0.95 通常显著低于 mAP@0.5，能反映框的位置精度。论文里说的"mAP"如果没注明 IoU 一般指这个值。
+
+### Per-class mAP
+
+对每个类别单独算 mAP@0.5。如果某一类的 mAP 远低于其他类，要么是该类样本严重不足，要么是类别边界本身定义不清。比较 per-class mAP 是排查"哪类塌了"的最快方式。
+
+### 混淆矩阵（Confusion Matrix）
+
+行表示真实类别，列表示模型预测类别，多出来一行一列是 background（无目标）。
+
+- 对角线：预测正确的数量（或比例）。
+- 非对角线（类间）：类别混淆，比如真实是 mature 被预测成 immature。
+- 最后一列 background：真实有目标但被漏检（看 Recall 偏低时主要看这里）。
+- 最后一行 background：实际是背景被预测成果子（看 Precision 偏低时主要看这里）。
+
+`confusion_matrix.png` 显示原始计数，`confusion_matrix_normalized.png` 按行归一化成比例，后者更适合看每一类的错误结构。
+
+### 四张曲线图速读
+
+| 文件 | 横轴 | 纵轴 | 看什么 |
+|---|---|---|---|
+| `BoxP_curve.png` | conf 阈值 | Precision | conf 升高时精度怎么涨 |
+| `BoxR_curve.png` | conf 阈值 | Recall | conf 升高时召回怎么掉 |
+| `BoxF1_curve.png` | conf 阈值 | F1 | 峰值对应最佳推理阈值 |
+| `BoxPR_curve.png` | Recall | Precision | 曲线越靠右上越好，下方面积≈AP |
+
 ## 推荐实验设计
 
 1. 基线实验：旧单类别 YOLO，只统计果实数量。
 2. 主方法实验：多类别 YOLO，识别果实成熟度/状态。
 3. 风险评估实验：YOLO 检测结果 + 规则化风险评分。
 4. 可选对比实验：Qwen-VL 视觉分析。
-
-YOLO 指标：
-
-```text
-Precision
-Recall
-mAP50
-mAP50-95
-per-class recall
-confusion matrix
-```
 
 停车风险指标可以自定义：
 
