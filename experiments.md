@@ -444,7 +444,80 @@ immature 正确 0.33 → 0.38，mature 正确 0.57 → 0.60，mature 漏检 0.34
 
 ---
 
-## 6. 五版本对比
+## 6. v7（小目标方向，待训）
+
+### 6.1 动机
+
+v4 → v6_aug 一直在数据和正则化两条线上调，结果天花板基本卡死：单类 mAP50 没法稳定突破 0.36，labels.jpg 已经说明大半 bbox 是 normalized < 0.1 的小目标，imgsz=960 只能部分缓解。继续补数据无法解决 YOLO 在小目标上的结构性短板。
+
+v7 的目的是**只动模型结构、不动数据**，给 YOLO11s 加一个 P2 检测头，看小目标 Recall 能不能涨。
+
+### 6.2 v7 vs v6_aug 的差别
+
+| 项 | v6_aug | v7 |
+|---|---|---|
+| 数据 | data/labeled_v6 | data/labeled_v6（不变） |
+| 模型 | yolo11s.pt（P3/P4/P5 三头） | configs/yolo11s-p2.yaml（P2/P3/P4/P5 四头）+ yolo11s.pt 初始化 backbone |
+| 训练参数 | dropout=0.0、wd=0.0005、imgsz=960、其他增强不变 | 完全一致 |
+
+P2 头是 stride=4 的检测头，对应原图 4 像素一个 anchor 中心，专门捕捉小目标。代价是显存和推理时间增加（多一个尺度），需要在 batch 上做权衡。
+
+### 6.3 文件
+
+- 配置：`configs/yolo11s-p2.yaml`
+- 训练：`scripts/train_v7.py`
+- 输出：`models/train_v7/`（训完出）
+
+### 6.4 辅助对比：SAHI 切片推理
+
+不重新训练的对照实验。`scripts/predict_sahi.py` 在 v6_aug 的 best.pt 上跑切片推理，比"原生推理 vs SAHI 推理"对小目标的 Recall 差异。SAHI 的原理是把大图切成 N 个重叠小块分别送 YOLO，再 NMS 合回去——把"小目标"在视觉上放大成"中等目标"，避开 YOLO 在低分辨率特征图上的特征塌陷。
+
+依赖：`pip install sahi`
+
+---
+
+## 7. v8（细粒度方向，待训）
+
+### 7.1 动机
+
+v6_aug 的混淆矩阵直接暴露了细粒度短板：真实 overripe 有 0.52 被预测成 mature，mature/overripe 的视觉边界是当前最弱环节。一阶段 YOLO 同时学"位置"和"类别"，两个任务互相干扰——降低对小框的位置 loss 会顺带让分类 logits 不稳，反之亦然。
+
+v8 把任务**显式拆开**：stage1 只检测"果子"一个类（不区分成熟度），stage2 拿 stage1 的检出 crop 单独训一个三类分类器。
+
+### 7.2 v8 vs v6_aug 的差别
+
+| 项 | v6_aug | v8 |
+|---|---|---|
+| 任务形式 | 一阶段，三类目标检测 | 二阶段，单类检测 + 三类分类 |
+| stage1 数据 | labeled_v6（3 类） | labeled_v6_single（1 类，由 prepare_v8_data.py 生成） |
+| stage1 模型 | yolo11s | yolo11s（结构一样，nc=1） |
+| stage2 数据 | — | labeled_v6_crops（按 GT 框裁出的 RGB 小图） |
+| stage2 模型 | — | resnet18（ImageNet 预训练，fc 改 3 类） |
+| 类别不平衡处理 | 无 | WeightedRandomSampler（按 1/count 上采样） |
+| 损失 | YOLO 默认 | CrossEntropy + label_smoothing=0.05（软化邻类边界） |
+
+预期收益：
+- stage1 的 mAP50 应显著高于 v6_aug（类间混淆从损失里消失）
+- stage2 在干净 crop 上能聚焦颜色/纹理/斑点特征，overripe 准确率有机会突破 0.30
+
+### 7.3 文件
+
+- 数据准备：`scripts/prepare_v8_data.py`
+  - 输出 `data/labeled_v6_single/`（单类 YOLO 数据集）
+  - 输出 `data/labeled_v6_crops/{train,valid,test}/{immature,mature,overripe}/`（分类用 crop）
+- stage1：`scripts/train_v8_stage1.py` → `models/train_v8_stage1/`
+- stage2：`scripts/train_v8_stage2.py` → `models/train_v8_stage2/`
+- 联合推理：`scripts/predict_v8_twostage.py`
+
+### 7.4 评估口径
+
+- stage1 单独评：mAP50 / mAP50-95（只看定位）
+- stage2 单独评：在 valid 的 crop 上算三类准确率 + per-class 准确率 + 混淆矩阵
+- 端到端评：用 predict_v8_twostage.py 在 valid 整图上跑，按"检测框正确 + 分类正确"作为最终 TP，重新算和 v6_aug 同口径的 mAP50
+
+---
+
+## 8. 五版本对比
 
 口径：所有 Precision / Recall / 单类 mAP50 取 best.pt 对应轮（mAP50-95 最优轮）。
 
@@ -468,7 +541,32 @@ immature 正确 0.33 → 0.38，mature 正确 0.57 → 0.60，mature 漏检 0.34
 
 ---
 
-## 7. 输出文件清单
+## 9. 推理脚本
+
+每个版本都有对应的推理入口，整理如下：
+
+| 脚本 | 对应版本 | 输入 | 输出 | 说明 |
+|---|---|---|---|---|
+| `scripts/detect_by_yolo.py` | v4 ~ v6_aug 任意 best.pt | 单张图 | 检测框 + 停车风险评分 | 通过 `FRUIT_MODEL_PATH` 环境变量切换权重；下游做 rule-based 风险评估 |
+| `scripts/detect_by_qwen.py` | Qwen-VL 基线对照 | 单张图 | VLM 文本判定 | 需要 `DASHSCOPE_API_KEY`，仅作为对比 baseline |
+| `scripts/predict_sahi.py` | v6_aug + SAHI | 目录 | 切片推理可视化 | 不重训，直接验证小目标 Recall 是否随 SAHI 提升；依赖 `pip install sahi` |
+| `scripts/predict_v8_twostage.py` | v8 stage1 + stage2 | 单张图或目录 | 二阶段联合预测可视化 | YOLO 单类检测 → 每个 crop 送 ResNet18 分类，输出"位置 + 成熟度" |
+
+v7（P2 头）训完直接走 Ultralytics 标准推理就行：
+
+```bash
+yolo predict model=models/train_v7/weights/best.pt source=data/labeled_v6/test/images
+```
+
+### 推荐对照实验组合
+
+1. **v6_aug 原生 vs v6_aug + SAHI**：同一份权重，比小目标 Recall 差异。
+2. **v6_aug 原生 vs v7（P2 头）**：训练阶段引入小目标先验 vs 推理阶段切片补偿，看哪种方式收益更大。
+3. **v6_aug 一阶段 vs v8 二阶段**：在同一测试集上分别跑 `detect_by_yolo.py` 和 `predict_v8_twostage.py`，重点比 overripe 类的 per-class 准确率。
+
+---
+
+## 10. 输出文件清单
 
 ```
 models/train_vX/
@@ -489,3 +587,14 @@ models/train_vX/
 ├── val_batch*_pred.jpg
 └── args.yaml            # 完整训练参数
 ```
+
+v8 的 stage2 输出结构不同：
+
+```
+models/train_v8_stage2/
+├── best.pt              # {"model": state_dict, "classes": [...]}
+├── last.pt
+└── history.json         # 每轮 train_loss / train_acc / val_acc / per_class_acc
+```
+
+v8 推理可视化默认写到 `models/predict_v8/`，SAHI 默认写到 `models/predict_sahi_v6_aug/`。
